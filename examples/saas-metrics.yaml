@@ -1,0 +1,175 @@
+ontology:
+  id: saas
+  name: SaaS Business Metrics
+  version: "1.0"
+  description: "Business ontology for SaaS subscription and usage analytics"
+
+  source:
+    connector: databricks
+    catalog: main
+    schema: saas_analytics
+
+  entities:
+    - id: subscription
+      name: Subscription
+      description: "A customer subscription to a plan"
+      table: fact_subscriptions
+      primaryKey: subscription_id
+      columns:
+        - name: subscription_id
+          type: string
+          description: "Unique subscription identifier"
+        - name: customer_id
+          type: string
+          description: "Reference to the customer"
+          foreignKey: customer.customer_id
+        - name: plan_tier
+          type: string
+          description: "Subscription plan tier"
+          allowedValues: [free, starter, pro, enterprise]
+        - name: mrr_amount
+          type: decimal
+          description: "Monthly recurring revenue for this subscription"
+        - name: start_date
+          type: date
+          description: "Subscription start date"
+        - name: end_date
+          type: date
+          description: "Subscription end date (null if active)"
+        - name: status
+          type: string
+          description: "Subscription status"
+          allowedValues: [active, churned, paused, trial]
+
+    - id: customer
+      name: Customer
+      description: "A SaaS customer (company or individual)"
+      table: dim_customers
+      primaryKey: customer_id
+      columns:
+        - name: customer_id
+          type: string
+          description: "Unique customer identifier"
+        - name: company_name
+          type: string
+          description: "Company or account name"
+        - name: industry
+          type: string
+          description: "Industry vertical"
+        - name: company_size
+          type: string
+          description: "Company size bracket"
+          allowedValues: [1-10, 11-50, 51-200, 201-1000, 1000+]
+        - name: signup_date
+          type: date
+          description: "Customer signup date"
+
+    - id: usage_event
+      name: Usage Event
+      description: "A recorded product usage event"
+      table: fact_usage_events
+      primaryKey: event_id
+      columns:
+        - name: event_id
+          type: string
+          description: "Unique event identifier"
+        - name: customer_id
+          type: string
+          description: "Reference to the customer"
+          foreignKey: customer.customer_id
+        - name: event_type
+          type: string
+          description: "Type of usage event"
+          allowedValues: [login, api_call, feature_use, export, import]
+        - name: event_date
+          type: date
+          description: "Date of the event"
+        - name: event_timestamp
+          type: timestamp
+          description: "Precise timestamp of the event"
+
+  relationships:
+    - id: subscription_customer
+      from: subscription.customer_id
+      to: customer.customer_id
+      type: many_to_one
+      description: "Each subscription belongs to one customer"
+
+    - id: usage_customer
+      from: usage_event.customer_id
+      to: customer.customer_id
+      type: many_to_one
+      description: "Each usage event belongs to one customer"
+
+  metrics:
+    - id: mrr
+      name: Monthly Recurring Revenue
+      description: "Total MRR from active subscriptions"
+      entity: subscription
+      expression: "SUM(mrr_amount)"
+      filters: ["status = 'active'"]
+
+    - id: active_subscriptions
+      name: Active Subscriptions
+      description: "Count of active subscriptions"
+      entity: subscription
+      expression: "COUNT(*)"
+      filters: ["status = 'active'"]
+
+    - id: churn_rate
+      name: Churn Rate
+      description: "Percentage of subscriptions that churned"
+      entity: subscription
+      expression: "ROUND(COUNT(CASE WHEN status = 'churned' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2)"
+
+    - id: dau
+      name: Daily Active Users
+      description: "Number of unique customers with at least one event per day"
+      entity: usage_event
+      expression: "COUNT(DISTINCT customer_id)"
+
+    - id: total_events
+      name: Total Events
+      description: "Total number of usage events"
+      entity: usage_event
+      expression: "COUNT(*)"
+
+    - id: avg_mrr_per_customer
+      name: Average MRR per Customer
+      description: "Average MRR across active subscriptions"
+      entity: subscription
+      expression: "AVG(mrr_amount)"
+      filters: ["status = 'active'"]
+
+  dimensions:
+    - id: time
+      name: Time
+      entity: subscription
+      column: start_date
+      granularities: [day, week, month, quarter, year]
+
+    - id: plan_tier
+      name: Plan Tier
+      entity: subscription
+      column: plan_tier
+
+    - id: industry
+      name: Industry
+      entity: customer
+      column: industry
+
+    - id: company_size
+      name: Company Size
+      entity: customer
+      column: company_size
+
+    - id: event_date
+      name: Event Date
+      entity: usage_event
+      column: event_date
+      granularities: [day, week, month]
+
+    - id: event_type
+      name: Event Type
+      entity: usage_event
+      column: event_type

@@ -1,0 +1,34 @@
+{
+  "name": "@openclaw/ontology",
+  "version": "0.1.0",
+  "description": "Ontology plugin for OpenClaw -- connect data warehouses, define business ontologies, query live data",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  },
+  "devDependencies": {
+    "@sinclair/typebox": "^0.34.0",
+    "openclaw": "latest",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "@databricks/sql": "^1.8.0",
+    "commander": "^13.0.0",
+    "js-yaml": "^4.1.0"
+  },
+  "files": [
+    "index.ts",
+    "config.ts",
+    "src/",
+    "openclaw.plugin.json"
+  ],
+  "license": "MIT"
+}

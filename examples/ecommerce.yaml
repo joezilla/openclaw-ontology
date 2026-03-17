@@ -1,0 +1,161 @@
+ontology:
+  id: ecommerce
+  name: E-Commerce Analytics
+  version: "1.0"
+  description: "Business ontology for an e-commerce data warehouse"
+
+  source:
+    connector: databricks
+    catalog: main
+    schema: analytics
+
+  entities:
+    - id: order
+      name: Order
+      description: "A customer purchase transaction"
+      table: fact_orders
+      primaryKey: order_id
+      columns:
+        - name: order_id
+          type: string
+          description: "Unique order identifier"
+        - name: customer_id
+          type: string
+          description: "Reference to the customer"
+          foreignKey: customer.customer_id
+        - name: product_id
+          type: string
+          description: "Reference to the product"
+          foreignKey: product.product_id
+        - name: order_date
+          type: date
+          description: "Date the order was placed"
+        - name: total_amount
+          type: decimal
+          description: "Total order value in USD"
+        - name: quantity
+          type: integer
+          description: "Number of items ordered"
+        - name: status
+          type: string
+          description: "Order status"
+          allowedValues: [pending, confirmed, shipped, delivered, cancelled]
+
+    - id: customer
+      name: Customer
+      description: "A registered customer"
+      table: dim_customers
+      primaryKey: customer_id
+      columns:
+        - name: customer_id
+          type: string
+          description: "Unique customer identifier"
+        - name: name
+          type: string
+          description: "Customer full name"
+        - name: email
+          type: string
+          description: "Customer email address"
+        - name: segment
+          type: string
+          description: "Customer segment"
+          allowedValues: [enterprise, mid-market, smb, consumer]
+        - name: signup_date
+          type: date
+          description: "Date the customer registered"
+        - name: country
+          type: string
+          description: "Customer country"
+
+    - id: product
+      name: Product
+      description: "A product in the catalog"
+      table: dim_products
+      primaryKey: product_id
+      columns:
+        - name: product_id
+          type: string
+          description: "Unique product identifier"
+        - name: name
+          type: string
+          description: "Product name"
+        - name: category
+          type: string
+          description: "Product category"
+          allowedValues: [electronics, clothing, home, food, other]
+        - name: price
+          type: decimal
+          description: "Unit price in USD"
+        - name: sku
+          type: string
+          description: "Stock keeping unit"
+
+  relationships:
+    - id: order_customer
+      from: order.customer_id
+      to: customer.customer_id
+      type: many_to_one
+      description: "Each order belongs to one customer"
+
+    - id: order_product
+      from: order.product_id
+      to: product.product_id
+      type: many_to_one
+      description: "Each order references one product"
+
+  metrics:
+    - id: total_revenue
+      name: Total Revenue
+      description: "Sum of all order amounts"
+      entity: order
+      expression: "SUM(total_amount)"
+      filters: ["status != 'cancelled'"]
+
+    - id: avg_order_value
+      name: Average Order Value
+      description: "Average order amount"
+      entity: order
+      expression: "AVG(total_amount)"
+      filters: ["status != 'cancelled'"]
+
+    - id: order_count
+      name: Order Count
+      description: "Number of orders"
+      entity: order
+      expression: "COUNT(*)"
+      filters: ["status != 'cancelled'"]
+
+    - id: customer_count
+      name: Customer Count
+      description: "Number of unique customers"
+      entity: order
+      expression: "COUNT(DISTINCT customer_id)"
+
+    - id: units_sold
+      name: Units Sold
+      description: "Total quantity of items sold"
+      entity: order
+      expression: "SUM(quantity)"
+      filters: ["status != 'cancelled'"]
+
+  dimensions:
+    - id: time
+      name: Time
+      entity: order
+      column: order_date
+      granularities: [day, week, month, quarter, year]
+
+    - id: customer_segment
+      name: Customer Segment
+      entity: customer
+      column: segment
+
+    - id: product_category
+      name: Product Category
+      entity: product
+      column: category
+
+    - id: country
+      name: Country
+      entity: customer
+      column: country

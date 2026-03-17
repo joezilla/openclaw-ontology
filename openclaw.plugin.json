@@ -1,0 +1,151 @@
+{
+  "id": "ontology",
+  "kind": "data",
+  "uiHints": {
+    "connector.token": {
+      "label": "Database Token",
+      "sensitive": true,
+      "placeholder": "dapi...",
+      "help": "Authentication token (or use ${DATABRICKS_TOKEN})"
+    },
+    "connector.host": {
+      "label": "Host",
+      "placeholder": "adb-1234567890.1.azuredatabricks.net",
+      "help": "Databricks workspace hostname"
+    },
+    "connector.path": {
+      "label": "HTTP Path",
+      "placeholder": "/sql/1.0/warehouses/abc123",
+      "help": "SQL warehouse HTTP path"
+    },
+    "connector.catalog": {
+      "label": "Catalog",
+      "placeholder": "main",
+      "help": "Default Unity Catalog name",
+      "advanced": true
+    },
+    "connector.schema": {
+      "label": "Schema",
+      "placeholder": "analytics",
+      "help": "Default schema name",
+      "advanced": true
+    },
+    "ontologyDir": {
+      "label": "Ontology Directory",
+      "placeholder": "~/.openclaw/ontologies",
+      "help": "Directory containing ontology YAML files",
+      "advanced": true
+    },
+    "query.maxRows": {
+      "label": "Max Rows",
+      "placeholder": "100",
+      "help": "Maximum rows returned per query",
+      "advanced": true
+    },
+    "query.timeoutMs": {
+      "label": "Query Timeout",
+      "placeholder": "30000",
+      "help": "Query timeout in milliseconds",
+      "advanced": true
+    },
+    "query.allowRawSql": {
+      "label": "Allow Raw SQL",
+      "help": "Allow raw SQL execution (not recommended)",
+      "advanced": true
+    },
+    "context.autoInject": {
+      "label": "Auto-Inject Context",
+      "help": "Automatically inject ontology context into agent prompts"
+    },
+    "context.maxEntities": {
+      "label": "Max Context Entities",
+      "placeholder": "5",
+      "help": "Maximum entities to include in auto-injected context",
+      "advanced": true
+    },
+    "context.includeMetrics": {
+      "label": "Include Metrics",
+      "help": "Include metric definitions in injected context",
+      "advanced": true
+    },
+    "context.includeSampleValues": {
+      "label": "Include Sample Values",
+      "help": "Include sample column values in context (requires DB query)",
+      "advanced": true
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "ontologyDir": {
+        "type": "string"
+      },
+      "connector": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "catalog": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "string"
+          }
+        },
+        "required": ["host", "path", "token"]
+      },
+      "query": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "maxRows": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "timeoutMs": {
+            "type": "number",
+            "minimum": 1000,
+            "maximum": 300000
+          },
+          "allowRawSql": {
+            "type": "boolean"
+          }
+        }
+      },
+      "context": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "autoInject": {
+            "type": "boolean"
+          },
+          "maxEntities": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "includeMetrics": {
+            "type": "boolean"
+          },
+          "includeSampleValues": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "required": ["connector"]
+  }
+}
