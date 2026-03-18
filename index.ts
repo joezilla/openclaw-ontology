@@ -59,7 +59,7 @@ export default definePluginEntry({
     // CLI Commands
     // ========================================================================
 
-    registerCliCommands(api, () => graphs, connector);
+    registerCliCommands(api, () => graphs, connector, cfg);
 
     // ========================================================================
     // Lifecycle Hooks

@@ -2,14 +2,17 @@ import fs from "node:fs";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/ontology";
 import type { OntologyGraph } from "../ontology/types.js";
 import type { DatabaseConnector } from "../connectors/types.js";
+import type { OntologyPluginConfig } from "../../config.js";
 import { validateOntologyStructure } from "../ontology/loader.js";
 import { validateAgainstSchema } from "../ontology/validator.js";
 import { buildEntityDetail } from "../context/injector.js";
+import { discoverOntology } from "./discover.js";
 
 export function registerCliCommands(
   api: OpenClawPluginApi,
   getGraphs: () => OntologyGraph[],
   connector: DatabaseConnector,
+  config: OntologyPluginConfig,
 ): void {
   api.registerCli(
     ({ program }) => {
@@ -132,6 +135,38 @@ export function registerCliCommands(
           // Trigger a schema refresh via ping
           const ok = await connector.ping();
           console.log(ok ? "Sync complete." : "Sync failed -- database not reachable.");
+        });
+
+      ontology
+        .command("discover")
+        .description("Use LLM to discover database schema and generate an ontology YAML")
+        .option("--catalog <catalog>", "Override catalog name")
+        .option("--schema <schema>", "Override schema name")
+        .option("--include <pattern>", "Glob pattern to include tables (e.g. 'fact_*')")
+        .option("--exclude <pattern>", "Glob pattern to exclude tables (e.g. '*_staging')")
+        .option("-o, --output <file>", "Write YAML to file instead of stdout")
+        .option("--sample-rows <n>", "Sample rows per table for better inference", "3")
+        .option("--id <id>", "Ontology ID", "my_ontology")
+        .option("--name <name>", "Ontology display name", "My Ontology")
+        .action(async (cmdOpts) => {
+          if (!connector.isConnected()) {
+            console.error("Database not connected. Start the ontology service first.");
+            return;
+          }
+          try {
+            await discoverOntology(api, connector, config, {
+              catalog: cmdOpts.catalog,
+              schema: cmdOpts.schema,
+              include: cmdOpts.include,
+              exclude: cmdOpts.exclude,
+              output: cmdOpts.output,
+              sampleRows: parseInt(cmdOpts.sampleRows, 10) || 3,
+              id: cmdOpts.id,
+              name: cmdOpts.name,
+            });
+          } catch (err) {
+            console.error(`Discover failed: ${String(err)}`);
+          }
         });
 
       ontology
