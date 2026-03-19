@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk/ontology";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import type { OntologyGraph } from "../ontology/types.js";
 import { buildEntityDetail } from "../context/injector.js";
 
@@ -82,8 +82,12 @@ export function registerExploreTool(
           if (def.dimensions.length > 0) {
             lines.push("**Dimensions:**");
             for (const d of def.dimensions) {
-              const gran = d.granularities ? ` [${d.granularities.join(", ")}]` : "";
-              lines.push(`- ${d.name} (${d.column})${gran}`);
+              if (d.granularities && d.granularities.length > 0) {
+                const granExamples = d.granularities.map((g) => `${d.id}:${g}`).join(", ");
+                lines.push(`- ${d.name} (${d.id}) — use as: ${d.id}, ${granExamples}`);
+              } else {
+                lines.push(`- ${d.name} (${d.id}) — use as: ${d.id}`);
+              }
             }
             lines.push("");
           }

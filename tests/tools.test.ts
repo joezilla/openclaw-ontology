@@ -106,7 +106,7 @@ describe("end-to-end plan + format", () => {
       dimensions: ["by_date"],
     });
 
-    expect(plan.sql).toContain("SUM(amount)");
+    expect(plan.sql).toContain("SUM(e1.amount)");
     expect(plan.sql).toContain("orders");
 
     // Mock result that such a query would return

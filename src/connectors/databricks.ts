@@ -70,23 +70,28 @@ class DatabricksConnector implements DatabaseConnector {
 
       const resultSet = await (operation as { fetchAll(): Promise<unknown[]> }).fetchAll();
       const schema = await (
-        operation as { getSchema(): Promise<{ columns: Array<{ name: string; typeDesc: { types: Array<{ primitiveEntry: { type: string } }> } }> }> }
+        operation as { getSchema(): Promise<{ columns: Array<{ columnName: string; typeDesc: { types: Array<{ primitiveEntry: { type: string } }> } }> }> }
       ).getSchema();
 
       await (operation as { close(): Promise<void> }).close();
 
-      const columns = schema.columns.map((col) => ({
-        name: col.name,
-        type: col.typeDesc?.types?.[0]?.primitiveEntry?.type ?? "unknown",
-      }));
+      const rawRows = resultSet as Record<string, unknown>[];
 
-      const rows = (resultSet as Record<string, unknown>[]).map((row) => {
-        const mapped: Record<string, unknown> = {};
-        for (const col of columns) {
-          mapped[col.name] = (row as Record<string, unknown>)[col.name];
-        }
-        return mapped;
-      });
+      // Derive column info from schema, falling back to row keys
+      let columns: Array<{ name: string; type: string }>;
+      if (schema?.columns?.length) {
+        columns = schema.columns.map((col) => ({
+          name: col.columnName,
+          type: col.typeDesc?.types?.[0]?.primitiveEntry?.type ?? "unknown",
+        }));
+      } else if (rawRows.length > 0) {
+        columns = Object.keys(rawRows[0]!).map((k) => ({ name: k, type: "unknown" }));
+      } else {
+        columns = [];
+      }
+
+      // Use raw rows directly -- the Databricks SDK returns them as key-value objects
+      const rows = rawRows;
 
       return {
         columns,
@@ -118,12 +123,17 @@ class DatabricksConnector implements DatabaseConnector {
     const tableMap = new Map<string, Array<{ name: string; type: string; nullable: boolean }>>();
 
     for (const row of result.rows) {
-      const tableName = row.table_name as string;
+      // Normalize keys to lowercase -- Databricks may return uppercase column names
+      const r: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(row)) {
+        r[k.toLowerCase()] = v;
+      }
+      const tableName = r.table_name as string;
       const cols = tableMap.get(tableName) ?? [];
       cols.push({
-        name: row.column_name as string,
-        type: row.data_type as string,
-        nullable: (row.is_nullable as string) === "YES",
+        name: r.column_name as string,
+        type: r.data_type as string,
+        nullable: (r.is_nullable as string) === "YES",
       });
       tableMap.set(tableName, cols);
     }

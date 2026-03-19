@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk/ontology";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import type { OntologyGraph } from "../ontology/types.js";
 import type { DatabaseConnector } from "../connectors/types.js";
 import { planQuery } from "../query/planner.js";
@@ -30,7 +30,7 @@ export function registerQueryTool(
           Type.Array(Type.String(), { description: "Metric IDs to compute (e.g. ['total_revenue'])" }),
         ),
         dimensions: Type.Optional(
-          Type.Array(Type.String(), { description: "Dimension IDs to group by (e.g. ['time', 'customer_segment'])" }),
+          Type.Array(Type.String(), { description: "Dimension IDs to group by. For time dimensions, append :granularity (e.g. 'time:month', 'time:quarter'). Without a granularity, date dimensions group by the raw value." }),
         ),
         filters: Type.Optional(
           Type.Array(Type.String(), { description: "SQL filter expressions (e.g. [\"order_date >= '2025-01-01'\"])" }),

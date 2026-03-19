@@ -12,8 +12,10 @@ export function buildOntologyContext(graphs: OntologyGraph[]): string {
     const metricNames = def.metrics.map((m) => m.id).join(", ");
 
     const dimParts = def.dimensions.map((d) => {
-      const granStr = d.granularities ? ` (${d.granularities.join("/")})` : "";
-      return `${d.id}${granStr}`;
+      if (d.granularities && d.granularities.length > 0) {
+        return `${d.id} (use ${d.id}:${d.granularities.join("/")})`;
+      }
+      return d.id;
     });
     const dimNames = dimParts.join(", ");
 
@@ -94,8 +96,12 @@ export function buildEntityDetail(graph: OntologyGraph, entityId: string): strin
   if (relatedDims.length > 0) {
     lines.push("", "Dimensions:");
     for (const d of relatedDims) {
-      const gran = d.granularities ? ` [${d.granularities.join(", ")}]` : "";
-      lines.push(`  - ${d.name} (${d.column})${gran}`);
+      if (d.granularities && d.granularities.length > 0) {
+        const granExamples = d.granularities.map((g) => `${d.id}:${g}`).join(", ");
+        lines.push(`  - ${d.name} (${d.id}) — use as: ${d.id}, ${granExamples}`);
+      } else {
+        lines.push(`  - ${d.name} (${d.id}) — use as: ${d.id}`);
+      }
     }
   }
 

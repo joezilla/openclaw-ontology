@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk/ontology";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import type { DatabaseConnector, SchemaInfo } from "../connectors/types.js";
 import type { OntologyPluginConfig } from "../../config.js";
 
@@ -131,7 +131,7 @@ ontology:
 4. **allowedValues**: If sample data shows a column has few distinct categorical values, add \`allowedValues\`. Do NOT add this for high-cardinality columns like IDs or names.
 5. **Relationships**: Infer relationships from foreign keys. Use many_to_one when an FK points from a fact to a dimension, one_to_many for the reverse.
 6. **Metrics**: Suggest 3-7 useful business metrics based on the data. Use SQL aggregate expressions (SUM, COUNT, AVG, COUNT(DISTINCT ...), etc.). Add filters where appropriate (e.g., excluding cancelled orders).
-7. **Dimensions**: Identify useful grouping/slicing columns. Add granularities for date/timestamp dimensions.
+7. **Dimensions**: Identify useful grouping/slicing columns. Add granularities for date/timestamp dimensions. Also create dimensions for categorical string columns (like country, status, segment, category, region, payment_method) — these should NOT have granularities.
 8. **Descriptions**: Write concise, informative descriptions for entities, columns, metrics, and dimensions.
 
 Return ONLY the YAML content. Do not wrap it in code fences. Do not include any commentary before or after the YAML.`;
@@ -204,43 +204,57 @@ export async function discoverOntology(
     .filter((line) => line !== null)
     .join("\n");
 
-  // 5. Call LLM via subagent
-  console.log("Generating ontology with LLM...");
-  const sessionKey = `ontology-discover-${Date.now()}`;
+  // 5. Try LLM via subagent if available, otherwise generate from template
+  let yaml: string;
+  let usedLlm = false;
 
-  const { runId } = await api.runtime.subagent.run({
-    sessionKey,
-    message: userMessage,
-    extraSystemPrompt: SYSTEM_PROMPT,
-  });
-
-  const waitResult = await api.runtime.subagent.waitForRun({
-    runId,
-    timeoutMs: 120_000,
-  });
-
-  if (waitResult.status !== "ok") {
-    throw new Error(
-      `LLM generation ${waitResult.status === "timeout" ? "timed out" : "failed"}: ${waitResult.error ?? "unknown error"}`,
-    );
-  }
-
-  // 6. Extract YAML from subagent response
-  const { messages } = await api.runtime.subagent.getSessionMessages({
-    sessionKey,
-    limit: 10,
-  });
-
-  const yaml = extractYaml(messages);
-  if (!yaml) {
-    throw new Error("LLM did not return valid YAML content.");
-  }
-
-  // 7. Cleanup
   try {
-    await api.runtime.subagent.deleteSession({ sessionKey, deleteTranscript: true });
-  } catch {
-    // Best effort
+    console.log("Generating ontology with LLM...");
+    const sessionKey = `ontology-discover-${Date.now()}`;
+
+    const { runId } = await api.runtime.subagent.run({
+      sessionKey,
+      message: userMessage,
+      extraSystemPrompt: SYSTEM_PROMPT,
+    });
+
+    const waitResult = await api.runtime.subagent.waitForRun({
+      runId,
+      timeoutMs: 120_000,
+    });
+
+    if (waitResult.status !== "ok") {
+      throw new Error(
+        `LLM generation ${waitResult.status === "timeout" ? "timed out" : "failed"}: ${waitResult.error ?? "unknown error"}`,
+      );
+    }
+
+    const { messages } = await api.runtime.subagent.getSessionMessages({
+      sessionKey,
+      limit: 10,
+    });
+
+    const extracted = extractYaml(messages);
+    if (!extracted) {
+      throw new Error("LLM did not return valid YAML content.");
+    }
+    yaml = extracted;
+    usedLlm = true;
+
+    try {
+      await api.runtime.subagent.deleteSession({ sessionKey, deleteTranscript: true });
+    } catch {
+      // Best effort
+    }
+  } catch (err) {
+    // Subagent not available (CLI context) or failed -- fall back to template generation
+    const errMsg = String(err);
+    if (errMsg.includes("only available during a gateway request")) {
+      console.log("LLM not available in CLI mode -- generating ontology from schema template...");
+    } else {
+      console.log(`LLM generation failed (${errMsg}) -- falling back to schema template...`);
+    }
+    yaml = generateYamlFromSchema(tables, sampleData, opts, config, catalog, schema);
   }
 
   // 8. Output
@@ -256,6 +270,126 @@ export async function discoverOntology(
   }
 
   return yaml;
+}
+
+/**
+ * Generate ontology YAML directly from schema info (no LLM needed).
+ * Produces a reasonable starting point that the user can refine.
+ */
+function generateYamlFromSchema(
+  tables: SchemaInfo["tables"],
+  sampleData: Map<string, Record<string, unknown>[]>,
+  opts: DiscoverOptions,
+  config: OntologyPluginConfig,
+  catalog?: string,
+  schema?: string,
+): string {
+  const entities: string[] = [];
+  const relationships: string[] = [];
+  const metrics: string[] = [];
+  const dimensions: string[] = [];
+
+  for (const table of tables) {
+    const entityId = table.name.replace(/^(fact_|dim_)/, "").toLowerCase();
+    const pkGuess = table.columns.find(
+      (c) => c.name === "id" || c.name === `${entityId}_id` || c.name.endsWith("_id"),
+    )?.name ?? table.columns[0]?.name ?? "id";
+
+    const colLines = table.columns.map((col) => {
+      const ontType = mapDbTypeToOntology(col.type);
+      let line = `        - name: ${col.name}\n          type: ${ontType}`;
+
+      // Detect likely foreign keys
+      if (col.name.endsWith("_id") && col.name !== pkGuess) {
+        const targetEntity = col.name.replace(/_id$/, "");
+        const targetTable = tables.find(
+          (t) => t.name === targetEntity || t.name === `dim_${targetEntity}` || t.name.replace(/^(fact_|dim_)/, "") === targetEntity,
+        );
+        if (targetTable) {
+          const targetEntityId = targetTable.name.replace(/^(fact_|dim_)/, "").toLowerCase();
+          line += `\n          foreignKey: ${targetEntityId}.${col.name}`;
+          relationships.push(
+            `    - id: ${entityId}_${targetEntityId}\n      from: ${entityId}.${col.name}\n      to: ${targetEntityId}.${col.name}\n      type: many_to_one`,
+          );
+        }
+      }
+
+      return line;
+    });
+
+    entities.push(
+      `    - id: ${entityId}\n      name: ${entityId.charAt(0).toUpperCase() + entityId.slice(1).replace(/_/g, " ")}\n      table: ${table.name}\n      primaryKey: ${pkGuess}\n      columns:\n${colLines.join("\n")}`,
+    );
+
+    // Auto-generate metrics for numeric columns
+    for (const col of table.columns) {
+      const t = col.type.toLowerCase();
+      if (t.includes("int") || t.includes("decimal") || t.includes("numeric") || t.includes("float") || t.includes("double")) {
+        if (!col.name.endsWith("_id")) {
+          metrics.push(
+            `    - id: total_${col.name}\n      name: Total ${col.name.replace(/_/g, " ")}\n      entity: ${entityId}\n      expression: "SUM(${col.name})"`,
+          );
+        }
+      }
+    }
+
+    // Auto-generate dimensions for date/timestamp columns
+    for (const col of table.columns) {
+      const t = col.type.toLowerCase();
+      if (t.includes("date") || t.includes("timestamp")) {
+        dimensions.push(
+          `    - id: by_${col.name}\n      name: By ${col.name.replace(/_/g, " ")}\n      entity: ${entityId}\n      column: ${col.name}\n      granularities: [day, week, month, quarter, year]`,
+        );
+      }
+    }
+
+    // Auto-generate dimensions for categorical string columns (not PKs or FKs)
+    for (const col of table.columns) {
+      const t = col.type.toLowerCase();
+      if (t.includes("char") || t === "string" || t === "text" || t === "varchar") {
+        if (col.name !== pkGuess && !col.name.endsWith("_id") && col.name !== "name") {
+          dimensions.push(
+            `    - id: by_${col.name}\n      name: By ${col.name.replace(/_/g, " ")}\n      entity: ${entityId}\n      column: ${col.name}`,
+          );
+        }
+      }
+    }
+  }
+
+  // Add a count metric per entity
+  for (const table of tables) {
+    const entityId = table.name.replace(/^(fact_|dim_)/, "").toLowerCase();
+    metrics.push(
+      `    - id: ${entityId}_count\n      name: ${entityId.charAt(0).toUpperCase() + entityId.slice(1).replace(/_/g, " ")} count\n      entity: ${entityId}\n      expression: "COUNT(*)"`,
+    );
+  }
+
+  const lines = [
+    `ontology:`,
+    `  id: ${opts.id}`,
+    `  name: ${opts.name}`,
+    `  version: "1.0"`,
+    `  description: "Auto-discovered ontology from ${catalog ?? "default"}.${schema ?? "default"}"`,
+    ``,
+    `  source:`,
+    `    connector: ${config.connector.type}`,
+    catalog ? `    catalog: ${catalog}` : null,
+    schema ? `    schema: ${schema}` : null,
+    ``,
+    `  entities:`,
+    ...entities,
+    ``,
+    `  relationships:`,
+    relationships.length > 0 ? relationships.join("\n\n") : `    []`,
+    ``,
+    `  metrics:`,
+    metrics.length > 0 ? metrics.join("\n\n") : `    []`,
+    ``,
+    `  dimensions:`,
+    dimensions.length > 0 ? dimensions.join("\n\n") : `    []`,
+  ];
+
+  return lines.filter((l) => l !== null).join("\n") + "\n";
 }
 
 /**

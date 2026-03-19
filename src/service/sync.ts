@@ -1,4 +1,4 @@
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk/ontology";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import type { DatabaseConnector } from "../connectors/types.js";
 import type { OntologyPluginConfig } from "../../config.js";
 

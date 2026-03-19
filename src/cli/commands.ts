@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk/ontology";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import type { OntologyGraph } from "../ontology/types.js";
 import type { DatabaseConnector } from "../connectors/types.js";
 import type { OntologyPluginConfig } from "../../config.js";
@@ -7,6 +7,26 @@ import { validateOntologyStructure } from "../ontology/loader.js";
 import { validateAgainstSchema } from "../ontology/validator.js";
 import { buildEntityDetail } from "../context/injector.js";
 import { discoverOntology } from "./discover.js";
+
+async function ensureConnected(
+  connector: DatabaseConnector,
+  config: OntologyPluginConfig,
+): Promise<boolean> {
+  if (connector.isConnected()) return true;
+  try {
+    await connector.connect({
+      host: config.connector.host,
+      path: config.connector.path,
+      token: config.connector.token,
+      catalog: config.connector.catalog,
+      schema: config.connector.schema,
+    });
+    return true;
+  } catch (err) {
+    console.error(`Failed to connect to database: ${String(err)}`);
+    return false;
+  }
+}
 
 export function registerCliCommands(
   api: OpenClawPluginApi,
@@ -84,6 +104,8 @@ export function registerCliCommands(
             return;
           }
 
+          await ensureConnected(connector, config);
+
           for (const graph of toValidate) {
             const def = graph.definition;
             console.log(`\nValidating: ${def.name} (${def.id})`);
@@ -127,10 +149,7 @@ export function registerCliCommands(
         .description("Sync metadata from database")
         .argument("[id]", "Ontology ID")
         .action(async (id) => {
-          if (!connector.isConnected()) {
-            console.error("Database not connected. Start the ontology service first.");
-            return;
-          }
+          if (!(await ensureConnected(connector, config))) return;
           console.log(`Syncing metadata${id ? ` for ${id}` : ""}...`);
           // Trigger a schema refresh via ping
           const ok = await connector.ping();
@@ -149,10 +168,7 @@ export function registerCliCommands(
         .option("--id <id>", "Ontology ID", "my_ontology")
         .option("--name <name>", "Ontology display name", "My Ontology")
         .action(async (cmdOpts) => {
-          if (!connector.isConnected()) {
-            console.error("Database not connected. Start the ontology service first.");
-            return;
-          }
+          if (!(await ensureConnected(connector, config))) return;
           try {
             await discoverOntology(api, connector, config, {
               catalog: cmdOpts.catalog,

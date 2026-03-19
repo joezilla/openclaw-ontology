@@ -1,5 +1,10 @@
-import type { OntologyGraph, ResolvedJoin } from "../ontology/types.js";
+import type { OntologyGraph, OntologyDimension, ResolvedJoin } from "../ontology/types.js";
 import { findJoinPath } from "../ontology/resolver.js";
+
+type ParsedDimension = {
+  dim: OntologyDimension;
+  granularity?: string;
+};
 
 export type QueryPlan = {
   sql: string;
@@ -36,20 +41,34 @@ export function planQuery(graph: OntologyGraph, options: QueryOptions): QueryPla
       ? `${source.schema}.`
       : "";
 
+  // Parse dimension strings — support "dimId:granularity" syntax
+  const parsedDimensions: ParsedDimension[] = dimensions.map((dimStr) => {
+    const [baseId, granularity] = dimStr.split(":");
+    const dim = graph.dimensionMap.get(baseId!);
+    if (!dim) {
+      throw new Error(`Dimension "${baseId}" not found in ontology`);
+    }
+    if (granularity) {
+      if (!dim.granularities || dim.granularities.length === 0) {
+        throw new Error(`Dimension "${baseId}" does not support granularities`);
+      }
+      if (!dim.granularities.includes(granularity as any)) {
+        throw new Error(`Invalid granularity "${granularity}" for dimension "${baseId}". Allowed: ${dim.granularities.join(", ")}`);
+      }
+    }
+    return { dim, granularity };
+  });
+
   // Collect all required joins
   const allJoins: ResolvedJoin[] = [];
   const joinedEntities = new Set<string>([entityId]);
 
   // Track which entities we need for dimensions
-  for (const dimId of dimensions) {
-    const dim = graph.dimensionMap.get(dimId);
-    if (!dim) {
-      throw new Error(`Dimension "${dimId}" not found in ontology`);
-    }
+  for (const { dim } of parsedDimensions) {
     if (dim.entity !== entityId && !joinedEntities.has(dim.entity)) {
       const path = findJoinPath(graph, entityId, dim.entity);
       if (path.length === 0) {
-        throw new Error(`No join path from "${entityId}" to "${dim.entity}" for dimension "${dimId}"`);
+        throw new Error(`No join path from "${entityId}" to "${dim.entity}" for dimension "${dim.id}"`);
       }
       for (const join of path) {
         if (!allJoins.some((j) => j.relationship.id === join.relationship.id)) {
@@ -79,12 +98,17 @@ export function planQuery(graph: OntologyGraph, options: QueryOptions): QueryPla
   const groupByParts: string[] = [];
 
   // Add dimensions to SELECT
-  for (const dimId of dimensions) {
-    const dim = graph.dimensionMap.get(dimId)!;
+  for (const { dim, granularity } of parsedDimensions) {
     const alias = entityAliases.get(dim.entity)!;
     const colRef = `${alias}.${dim.column}`;
-    selectParts.push(`${colRef} AS ${dim.column}`);
-    groupByParts.push(colRef);
+    if (granularity) {
+      const truncExpr = `DATE_TRUNC('${granularity}', ${colRef})`;
+      selectParts.push(`${truncExpr} AS ${dim.column}_${granularity}`);
+      groupByParts.push(truncExpr);
+    } else {
+      selectParts.push(`${colRef} AS ${dim.column}`);
+      groupByParts.push(colRef);
+    }
   }
 
   // Add metrics to SELECT

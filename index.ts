@@ -5,7 +5,7 @@
  * and give OpenClaw agents the ability to reason over ontology + live data.
  */
 
-import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/ontology";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { ontologyConfigSchema } from "./config.js";
 import { loadOntologyDir } from "./src/ontology/loader.js";
 import { buildOntologyGraph } from "./src/ontology/resolver.js";
@@ -25,7 +25,7 @@ import type { OntologyGraph } from "./src/ontology/types.js";
 // Ensure Databricks connector is registered on import
 import "./src/connectors/databricks.js";
 
-export default definePluginEntry({
+export default {
   id: "ontology",
   name: "Ontology",
   description: "Connect data warehouses and define business ontologies for agent reasoning",
@@ -120,4 +120,4 @@ export default definePluginEntry({
       },
     });
   },
-});
+};

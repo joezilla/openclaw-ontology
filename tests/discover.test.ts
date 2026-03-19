@@ -245,18 +245,19 @@ describe("discoverOntology", () => {
     expect(runCall.message).toContain("SAMPLE ROWS");
   });
 
-  it("throws on LLM timeout", async () => {
+  it("falls back to template on LLM timeout", async () => {
     const connector = makeConnector(testSchema);
     const api = makeApi(sampleYaml);
     api.runtime.subagent.waitForRun.mockResolvedValue({ status: "timeout" });
 
-    await expect(
-      discoverOntology(api, connector, testConfig, {
-        id: "test",
-        name: "Test",
-        sampleRows: 0,
-      }),
-    ).rejects.toThrow("timed out");
+    const result = await discoverOntology(api, connector, testConfig, {
+      id: "test",
+      name: "Test",
+      sampleRows: 0,
+    });
+
+    expect(result).toContain("ontology:");
+    expect(result).toContain("id: test");
   });
 
   it("extracts YAML from code-fenced response", async () => {
@@ -291,6 +292,29 @@ describe("discoverOntology", () => {
     const content = await readFile(tmpFile, "utf-8");
     expect(content).toContain("ontology:");
     await unlink(tmpFile);
+  });
+
+  it("generates categorical dimensions for string columns in template fallback", async () => {
+    const connector = makeConnector(testSchema);
+    const api = makeApi(sampleYaml);
+    // Force template fallback by making subagent fail
+    api.runtime.subagent.waitForRun.mockResolvedValue({ status: "error", error: "fail" });
+
+    const result = await discoverOntology(api, connector, testConfig, {
+      id: "test",
+      name: "Test",
+      sampleRows: 0,
+    });
+
+    // Should have date dimension for order_date
+    expect(result).toContain("by_order_date");
+    expect(result).toContain("granularities:");
+    // Should have categorical dimension for segment (string column, not PK, not FK)
+    expect(result).toContain("by_segment");
+    // Should NOT have dimension for customer_id (it's a PK/FK)
+    expect(result).not.toMatch(/id: by_customer_id/);
+    // Should NOT have dimension for name (excluded)
+    expect(result).not.toMatch(/id: by_name/);
   });
 
   it("overrides catalog and schema", async () => {

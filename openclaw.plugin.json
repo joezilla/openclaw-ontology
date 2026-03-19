@@ -104,7 +104,7 @@
             "type": "string"
           }
         },
-        "required": ["host", "path", "token"]
+        "required": []
       },
       "query": {
         "type": "object",
@@ -146,6 +146,6 @@
         }
       }
     },
-    "required": ["connector"]
+    "required": []
   }
 }

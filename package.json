@@ -14,13 +14,14 @@
     "openclaw": "*"
   },
   "devDependencies": {
-    "@sinclair/typebox": "^0.34.0",
+    "@types/js-yaml": "^4.0.9",
     "openclaw": "latest",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
   "dependencies": {
     "@databricks/sql": "^1.8.0",
+    "@sinclair/typebox": "^0.34.0",
     "commander": "^13.0.0",
     "js-yaml": "^4.1.0"
   },
@@ -30,5 +31,10 @@
     "src/",
     "openclaw.plugin.json"
   ],
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
   "license": "Apache-2.0"
 }

@@ -63,7 +63,7 @@ const testOntology: OntologyDefinition = {
       name: "Time",
       entity: "order",
       column: "order_date",
-      granularities: ["day", "week", "month"],
+      granularities: ["day", "week", "month", "quarter", "year"],
     },
     {
       id: "customer_segment",
@@ -83,7 +83,7 @@ describe("planQuery", () => {
       metrics: ["total_revenue"],
     });
 
-    expect(plan.sql).toContain("SUM(total_amount)");
+    expect(plan.sql).toContain("SUM(e1.total_amount)");
     expect(plan.sql).toContain("fact_orders");
     expect(plan.sql).toContain("status != 'cancelled'");
   });
@@ -130,6 +130,53 @@ describe("planQuery", () => {
     });
 
     expect(plan.sql).toContain("LIMIT 50");
+  });
+
+  it("generates SQL with time granularity", () => {
+    const plan = planQuery(graph, {
+      entityId: "order",
+      metrics: ["total_revenue"],
+      dimensions: ["time:month"],
+    });
+
+    expect(plan.sql).toContain("DATE_TRUNC('month', e1.order_date)");
+    expect(plan.sql).toContain("AS order_date_month");
+    expect(plan.sql).toContain("GROUP BY DATE_TRUNC('month', e1.order_date)");
+  });
+
+  it("rejects invalid granularity", () => {
+    expect(() =>
+      planQuery(graph, {
+        entityId: "order",
+        metrics: ["total_revenue"],
+        dimensions: ["time:yearly"],
+      }),
+    ).toThrow('Invalid granularity "yearly" for dimension "time"');
+  });
+
+  it("rejects granularity on non-temporal dimension", () => {
+    expect(() =>
+      planQuery(graph, {
+        entityId: "order",
+        metrics: ["total_revenue"],
+        dimensions: ["customer_segment:month"],
+      }),
+    ).toThrow('Dimension "customer_segment" does not support granularities');
+  });
+
+  it("works with granularity and cross-entity join", () => {
+    const plan = planQuery(graph, {
+      entityId: "order",
+      metrics: ["total_revenue"],
+      dimensions: ["time:quarter", "customer_segment"],
+    });
+
+    expect(plan.sql).toContain("DATE_TRUNC('quarter', e1.order_date)");
+    expect(plan.sql).toContain("AS order_date_quarter");
+    expect(plan.sql).toContain("JOIN");
+    expect(plan.sql).toContain("dim_customers");
+    expect(plan.sql).toContain("segment");
+    expect(plan.joins.length).toBeGreaterThan(0);
   });
 
   it("includes explanation in the plan", () => {

@@ -21,20 +21,12 @@ User question                  Ontology plugin                  Data warehouse
 - **Databricks Connector** -- First-class support for Databricks SQL warehouses; extensible connector interface for Snowflake, BigQuery, Postgres, and others
 - **6 Agent Tools** -- `ontology_query`, `ontology_explore`, `ontology_list`, `ontology_describe`, `ontology_sql`, `ontology_validate`
 - **Automatic Context Injection** -- Ontology summaries are injected into agent system prompts so agents know what data is available before the user even asks
-- **Ontology-Aware SQL Generation** -- The query planner resolves cross-entity joins, aliases tables, applies metric filters, and generates correct GROUP BY clauses automatically
+- **Ontology-Aware SQL Generation** -- The query planner resolves cross-entity joins, aliases tables, applies metric filters, generates correct GROUP BY clauses, and supports time granularities (`DATE_TRUNC`) automatically
 - **Read-Only Safety Guardrails** -- DML/DDL rejection, row limits, query timeouts, and filter sanitization prevent destructive operations
 - **CLI Management** -- List, describe, validate, sync, and scaffold ontologies from the command line
 - **Keyword-Based Relevance** -- Only ontologies relevant to the user's question are injected into context, keeping token costs low
 
 ## Installation
-
-### From npm (recommended)
-
-```bash
-openclaw plugin install @openclaw/ontology
-```
-
-This installs the plugin into OpenClaw's plugin directory and makes it available to all agents.
 
 ### From source (development)
 
@@ -42,41 +34,94 @@ This installs the plugin into OpenClaw's plugin directory and makes it available
 git clone https://github.com/openclaw/openclaw-ontology.git
 cd openclaw-ontology
 npm install
+npm run build
+openclaw plugins install "$(pwd)"
 ```
 
-Then register the local plugin with OpenClaw:
+The plugin installs but won't activate until you configure a database connector (next step). You'll see a warning like `ontology failed during register: Error: ontology config required` -- this is expected.
+
+### Configure the connector
+
+You can find the **host** and **HTTP path** in the Databricks UI under **SQL Warehouses > (your warehouse) > Connection details**. The **catalog** is the top-level entry in the **Catalog** sidebar.
+
+Set each value one at a time (the plugin will show registration warnings until all required fields are set -- this is normal):
 
 ```bash
-openclaw plugin link /path/to/openclaw-ontology
+# Store the token in OpenClaw's env config so the gateway can resolve it
+openclaw config set env.DATABRICKS_TOKEN "dapi..."
+
+openclaw config set plugins.entries.ontology.config.connector.host "dbc-xxxxx.cloud.databricks.com"
+openclaw config set plugins.entries.ontology.config.connector.path "/sql/1.0/warehouses/abc123"
+openclaw config set plugins.entries.ontology.config.connector.token '${DATABRICKS_TOKEN}'
+openclaw config set plugins.entries.ontology.config.connector.catalog "workspace"
+openclaw config set plugins.entries.ontology.config.connector.schema "default"
 ```
+
+The token uses `${DATABRICKS_TOKEN}` syntax which references the env var set via `openclaw config set env.DATABRICKS_TOKEN`. This ensures the gateway process can resolve it at runtime (shell `export` alone is not enough since the gateway runs as a separate process).
+
+Once all three required fields (`host`, `path`, `token`) are set, you should see `ontology: plugin registered` in the output.
+
+### Allow the plugin and enable tools
+
+The ontology plugin must be explicitly allowed. You also need the `full` tools profile -- the default `coding` profile filters out plugin-registered tools:
+
+```bash
+openclaw config set plugins.allow '["ontology"]'
+openclaw config set tools.profile "full"
+openclaw gateway restart
+```
+
+If you prefer to stay on the `coding` profile, you can switch back after confirming the ontology tools work and look for a per-tool allowlist in your OpenClaw version.
 
 ### Verify installation
 
 ```bash
-openclaw plugin list
+openclaw plugins list
 ```
 
-You should see `@openclaw/ontology` in the output.
+You should see `ontology` with status **loaded** in the output. If you still see a `plugins.allow is empty` warning, the allow step above didn't take -- re-run it.
+
+### Reinstalling
+
+If you need to reinstall (e.g. after updating the source), remove the existing install first:
+
+```bash
+rm -rf ~/.openclaw/extensions/ontology
+openclaw plugins install "$(pwd)"
+```
 
 ## Quick Start
 
-### 1. Set up your database connection
-
-```bash
-# Set your Databricks token as an environment variable
-export DATABRICKS_TOKEN="dapi..."
-
-# Configure the connector
-openclaw config set plugins.ontology.connector.host "adb-1234567890.1.azuredatabricks.net"
-openclaw config set plugins.ontology.connector.path "/sql/1.0/warehouses/abc123"
-openclaw config set plugins.ontology.connector.token '${DATABRICKS_TOKEN}'
-openclaw config set plugins.ontology.connector.catalog "main"
-openclaw config set plugins.ontology.connector.schema "analytics"
-```
-
 ### 2. Create an ontology
 
-Generate a starter template and save it:
+**Option A: Generate from your database (recommended)**
+
+The `ontology discover` command inspects your live database schema, samples rows, and uses an LLM to generate a starter ontology YAML:
+
+```bash
+mkdir -p ~/.openclaw/ontologies
+openclaw ontology discover \
+  --catalog workspace \
+  --schema default \
+  --sample-rows 3 \
+  --id my_ontology \
+  --name "My Ontology" \
+  --output ~/.openclaw/ontologies/my-data.yaml
+```
+
+You can filter which tables to include:
+
+```bash
+# Only fact tables
+openclaw ontology discover --include 'fact_*' --output ontology.yaml
+
+# Everything except staging tables
+openclaw ontology discover --exclude '*_staging' --output ontology.yaml
+```
+
+The generated ontology includes dimensions for date/timestamp columns (with time granularities) and categorical string columns (e.g., `segment`, `status`, `country`). The output is a starting point -- review and edit the YAML before using it in production.
+
+**Option B: Start from a blank template**
 
 ```bash
 mkdir -p ~/.openclaw/ontologies
@@ -93,11 +138,31 @@ openclaw ontology validate
 
 ### 4. Query through an agent
 
-Ask your OpenClaw agent a business question:
+Make sure the gateway is running (`openclaw gateway start`), then ask your OpenClaw agent a question. Start by discovering what's available:
 
-> "What was our total revenue by customer segment last quarter?"
+> What data sources do you have access to? Explore the ontology and tell me what metrics and dimensions are available.
 
-The agent automatically uses `ontology_query` to plan the SQL, execute it safely, and return a formatted table.
+Then ask business questions:
+
+> What are the top 5 countries by total revenue? Break it down by payment method.
+
+> Show me total order amount by category for the last quarter.
+
+> What was our total revenue by customer segment last quarter?
+
+> Give me total order volume per month.
+
+The agent automatically uses `ontology_list` and `ontology_explore` to discover available data, then `ontology_query` to plan the SQL, execute it safely, and return a formatted table.
+
+### Dimension granularities
+
+Time dimensions support granularity suffixes via `dimension_id:granularity` syntax. For example, if an ontology defines a `time` dimension on `order_date` with granularities `[day, week, month, quarter, year]`:
+
+- `"time"` -- groups by raw `order_date`
+- `"time:month"` -- generates `DATE_TRUNC('month', e1.order_date) AS order_date_month`
+- `"time:quarter"` -- generates `DATE_TRUNC('quarter', e1.order_date) AS order_date_quarter`
+
+The agent sees these options in tool descriptions and context injection, so it picks the right granularity without user guidance on syntax.
 
 ## How It Works
 
@@ -167,4 +232,4 @@ src/service/                 Background connector lifecycle
 
 ## License
 
-MIT
+Apache-2.0
