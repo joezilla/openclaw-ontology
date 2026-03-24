@@ -1,6 +1,20 @@
+<p align="center">
+  <img src="openclaw-ontology.png" alt="OpenClaw Ontology" />
+</p>
+
 # @openclaw/ontology
 
-Connect data warehouses, define business ontologies in YAML, and let OpenClaw agents reason over your data with structured, safe SQL queries.
+AI agents are only as good as the world model they operate within.
+
+When your agent reads an email, does it know that "Alice" is the same Alice assigned to the Q3 project — and that the commitment she just made in Slack is now blocking a deployment? Without an ontology, the answer is almost certainly no.
+
+An ontology is a structured map of the things that matter in your domain: the entities (people, projects, contracts, tasks), the typed relationships between them, and the rules that govern how they behave. It's the difference between an agent that pattern-matches over raw text and one that actually understands your business.
+
+This is the approach Palantir built at enterprise scale with Foundry and AIP — a living semantic layer where agents don't just read data, they operate within a structured representation of your reality. The result is agents that are auditable, composable, and safe to run in production.
+
+This plugin brings that same principle to [OpenClaw](https://openclaw.com), the local-first personal AI agent framework. It bridges your data warehouse (starting with Databricks + Unity Catalog) to your agents through a YAML-defined business ontology — a curated layer of entities, relationships, metrics, and dimensions that agents reason over safely, with read-only guardrails, query validation, and automatic context injection.
+
+**Stop giving your agents raw data. Give them a world they understand.**
 
 ## Overview
 
