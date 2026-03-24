@@ -1,8 +1,12 @@
 <p align="center">
-  <img src="openclaw-ontology.png" alt="OpenClaw Ontology" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="openclaw-ontology-dark.png" />
+    <source media="(prefers-color-scheme: light)" srcset="openclaw-ontology.png" />
+    <img src="openclaw-ontology.png" alt="OpenClaw Ontology" />
+  </picture>
 </p>
 
-# @openclaw/ontology
+## What is an Ontology?
 
 AI agents are only as good as the world model they operate within.
 
